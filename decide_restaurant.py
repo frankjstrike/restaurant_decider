@@ -75,15 +75,18 @@ def find_restaurant(coordinates, meters, price_level, rating=None):
     Finds nearby restaurants based on geocoordinates, radius in meters, and optional price level and rating.
     """
 
+    logger.info("Search radius: " + str(round((meters / 1609.34), 2)) + " miles")
+
     restaurants = []
     next_page_token = None
 
     try:
         while True:
+
             endpoint = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
             params = {
                 "location": coordinates,
-                "radius": 1000000,
+                "radius": meters,
                 "type": "restaurant",
                 "key": APIKEY,
                 "open_now": True
@@ -92,13 +95,12 @@ def find_restaurant(coordinates, meters, price_level, rating=None):
             # Excluded types
             excluded_types = ["shopping_mall", "gas_station", "lodging"]
             excluded = False
+
+            if next_page_token:
+                params['pagetoken'] = next_page_token
             
             response = requests.get(endpoint, params=params)
             data = response.json()
-
-            if next_page_token:
-                    params['pagetoken'] = next_page_token
-                    next_page_token = params.get("pagetoken")
 
             for place in data["results"]:
                 # Filter out excluded types
@@ -125,22 +127,27 @@ def find_restaurant(coordinates, meters, price_level, rating=None):
                     }
                     restaurants.append(restaurant)
 
-                # If there are more than 20 results, get the next page of results
-                next_page_token = data.get("next_page_token")
+            # Check if there's a next_page_token for more results
+            next_page_token = data.get("next_page_token")
 
-                if not next_page_token:
-                    break
+            # If there's no next_page_token, exit the loop
+            if not next_page_token:
+                break
 
+            # If there's a next_page_token, introduce a delay before the next request
+            time.sleep(2)
 
-            if restaurants:
-                logger.info("Restaurants found: " + str(len(restaurants)))
-                random.shuffle(restaurants)
-                return restaurants
-            else:
-                return "No restaurants found"
+        # After the loop
+        if restaurants:
+            logger.info("Restaurants found: " + str(len(restaurants)))
+            random.shuffle(restaurants)
+            return restaurants
+        else:
+            return "No restaurants found"
 
     except Exception as e:
         log_error("Error finding restaurants", e)
+
 
 
 
@@ -156,6 +163,7 @@ def get_parameters():
     parser.add_argument("-d", "--distance", help="Distance in miles from address", required=False)
     parser.add_argument("-p", "--price_level", help="Price level to look for. Accepted input: 1-4 (1 being cheapest, 4 being most expensive)")
     parser.add_argument("-r", "--rating", help="Minimum rating to look for. Accepted input: 1-5 (1 being lowest, 5 being highest)")
+    parser.add_argument("-l", "--list", help="List all restaurants found", action="store_true")
 
     """If ran without arguments, print help menu"""
     if len(sys.argv) == 1:
@@ -174,6 +182,7 @@ def main():
     distance = args.distance
     price_level = args.price_level
     rating = args.rating
+    list = args.list
 
     print("")
 
@@ -196,6 +205,40 @@ def main():
             print("Address: " + selected_restaurant['Address'])
             print("Rating: " + str(selected_restaurant['Rating']))
             print("Price Level: " + str(selected_restaurant['Price Level']))
+
+        # If list is True, print all restaurants found
+        if list:
+            if restaurants:
+                # Compute maximum lengths for each column
+                max_name_len = max(len(restaurant['Name']) for restaurant in restaurants)
+                max_addr_len = max(len(restaurant['Address']) for restaurant in restaurants)
+                max_rating_len = max(len(str(restaurant['Rating'])) for restaurant in restaurants)
+                max_price_len = max(len(str(restaurant['Price Level'])) for restaurant in restaurants)
+
+                # Add some padding (e.g., 5 extra spaces) for better readability
+                padding = 5
+                max_name_len += padding
+                max_addr_len += padding
+                max_rating_len += padding
+                max_price_len += padding
+
+                print("\nList of restaurants found:\n")
+
+                # Header
+                header_format = "{:<{}} | {:<{}} | {:<{}} | {:<{}}"
+                print(header_format.format("Name", max_name_len, "Address", max_addr_len, "Rating", max_rating_len, "Price Level", max_price_len))
+                print("-" * (max_name_len + max_addr_len + max_rating_len + max_price_len + 10))  # Line separator for clarity
+
+                # Data rows
+                row_format = "{:<{}} | {:<{}} | {:<{}} | {:<{}}"
+                for restaurant in restaurants:
+                    print(row_format.format(
+                        restaurant['Name'], max_name_len,
+                        restaurant['Address'], max_addr_len,
+                        str(restaurant['Rating']), max_rating_len,
+                        str(restaurant['Price Level']), max_price_len
+                    ))
+
     except Exception as e:
         log_error("Error in main", e)
 
